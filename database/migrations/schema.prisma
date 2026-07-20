@@ -1,0 +1,480 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── AUTH ────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String
+  role          String    @default("AGENT") // ADMIN, AGENT, FINANCEIRO
+  avatarUrl     String?
+  status        String    @default("ACTIVE") // ACTIVE, INACTIVE
+  lastAccess    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  oportunidades  Oportunidade[]
+  vendas         Venda[]
+  viagens        Viagem[]
+  followUps      FollowUp[]
+  auditoria      AuditLog[]
+  commissions    Commission[]
+}
+
+model SystemConfig {
+  id          String   @id @default("main")
+  agencyName  String   @default("WDIH Milhas & Viagens")
+  setupDone   Boolean  @default(false)
+  adminEmail  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── CONFIGURAÇÕES ──────────────────────────────────
+
+model CompanhiaAerea {
+  id            String   @id @default(cuid())
+  nome          String
+  codigoIATA    String   @unique
+  pais          String
+  logoUrl       String?
+  status        String   @default("ATIVA") // ATIVA, INATIVA
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  programas     ProgramaFidelidade[]
+  voos          Voo[]
+}
+
+model ProgramaFidelidade {
+  id                 String   @id @default(cuid())
+  nome               String
+  companhiaAereaId   String?
+  bancoParceiro      String?
+  taxaTransferencia  Float    @default(0)
+  validadePontos     Int?     // meses
+  siteUrl            String?
+  corIdentificadora  String   @default("#3B82F6")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  companhiaAerea     CompanhiaAerea?   @relation(fields: [companhiaAereaId], references: [id])
+  categorias         CategoriaFidelidade[]
+  oportunidades      Oportunidade[]
+  comprasMilhas      CompraMilhas[]
+}
+
+model CategoriaFidelidade {
+  id                  String   @id @default(cuid())
+  nome                String
+  programaFidelidadeId String
+  beneficios          String?
+  pontuacaoMinima     Int      @default(0)
+  multiplicadorAcumulo Float   @default(1.0)
+  cor                 String   @default("#6B7280")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  programa            ProgramaFidelidade @relation(fields: [programaFidelidadeId], references: [id])
+}
+
+model CartaoCredito {
+  id                     String   @id @default(cuid())
+  bandeira               String
+  bancoEmissor           String
+  programaFidelidadeId   String?
+  fatorConversao         Float    @default(1.0) // R$1 = X pontos
+  beneficios             String?
+  anuidade               Float?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  programa               ProgramaFidelidade? @relation(fields: [programaFidelidadeId], references: [id])
+}
+
+model ServicoOferecido {
+  id            String   @id @default(cuid())
+  nome          String
+  tipo          String   @default("SERVICO") // PRODUTO, SERVICO
+  precoBase     Float    @default(0)
+  comissaoPadrao Float   @default(10) // porcentagem
+  fornecedor    String?
+  descricao     String?
+  status        String   @default("ATIVO")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  vendasItens   VendaItem[]
+}
+
+// ─── CRM ────────────────────────────────────────────
+
+model Cliente {
+  id                  String   @id @default(cuid())
+  nome                String
+  cpf                 String?
+  passaporte          String?
+  rg                  String?
+  dataNascimento      DateTime?
+  email               String?
+  telefone            String?
+  whatsapp            String?
+  endereco            String?
+  cidade              String?
+  estado              String?
+  cep                 String?
+  estadoCivil         String?
+  profissao           String?
+  fotoUrl             String?
+
+  // Documentação
+  passaporteNumero    String?
+  passaporteValidade  DateTime?
+  passaporteUrl       String?
+  vistoAmericano      Boolean   @default(false)
+  vistoAmericanoValidade DateTime?
+  vistoAmericanoUrl   String?
+  vistoEuropeu        Boolean   @default(false)
+  vistoEuropeuTipo    String?
+  vistoEuropeuValidade DateTime?
+  vacinas             String?
+
+  // Preferências
+  tipoViagem          String?   // PRAIA, NEVE, CAMPO, CIDADE, CRUZEIRO, AVENTURA
+  destinosInteresse   String?
+  faixaOrcamento      String?   // BAIXO, MEDIO, ALTO, LUXO
+  preferenciaClasse   String?   // ECONOMICA, EXECUTIVA, PRIMEIRA
+  preferenciaPagamento String?  // A_VISTA, PARCELADO, PONTOS, MISTO
+  alergiasRestricoes  String?
+  necessidadesEspeciais String?
+
+  // Histórico
+  totalGasto          Float     @default(0)
+  ultimoContato       DateTime?
+  status              String    @default("LEAD") // LEAD, ATIVO, VIP, INATIVO
+  tags                String?
+  observacoes         String?
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  oportunidades       Oportunidade[]
+  vendas              Venda[]
+  viagens             Viagem[]
+  mensagensWhatsApp   MensagemWhatsApp[]
+}
+
+// ─── PIPELINE DE VENDAS ─────────────────────────────
+
+model PipelineColuna {
+  id        String   @id @default(cuid())
+  nome      String
+  ordem     Int
+  cor       String   @default("#6B7280")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  oportunidades Oportunidade[]
+}
+
+model Oportunidade {
+  id                    String   @id @default(cuid())
+  titulo                String
+  clienteId             String
+  tipoNegocio           String   // VENDA_NORMAL, PONTOS_MILHAS
+  programaFidelidadeId  String?
+  valorEstimado         Float?
+  pipelineColunaId      String
+  responsavelId         String?
+  prazoDeadline         DateTime?
+  tags                  String?
+  complexidadeOrcamento String?  // SIMPLES, MEDIO, COMPLEXO
+  prazoEnvioOrcamento   DateTime?
+
+  // Informações de encerramento
+  formaPagamento        String?
+  valorFinalFechado     Float?
+  prazoPagamento        DateTime?
+  documentacaoPendente  String?
+  observacoesFechamento String?
+
+  motivoPerda           String?
+  detalhamentoPerda     String?
+  aceitaContatoFuturo   Boolean?
+
+  motivoAdiamento       String?
+  dataRetomada          DateTime?
+  observacoesAdiamento  String?
+
+  ultimaAtualizacao     DateTime  @default(now())
+  diasNaColuna          Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  cliente               Cliente             @relation(fields: [clienteId], references: [id])
+  programaFidelidade    ProgramaFidelidade? @relation(fields: [programaFidelidadeId], references: [id])
+  pipelineColuna        PipelineColuna      @relation(fields: [pipelineColunaId], references: [id])
+  responsavel           User?               @relation(fields: [responsavelId], references: [id])
+
+  historicoMovimentacoes HistoricoPipeline[]
+  followUps              FollowUp[]
+  venda                  Venda?
+  viagem                 Viagem?
+}
+
+model HistoricoPipeline {
+  id              String   @id @default(cuid())
+  oportunidadeId  String
+  colunaAnterior  String?
+  colunaNova      String
+  usuarioId       String?
+  observacoes     String?
+  createdAt       DateTime @default(now())
+
+  oportunidade    Oportunidade @relation(fields: [oportunidadeId], references: [id])
+  usuario         User?        @relation(fields: [usuarioId], references: [id])
+}
+
+model FollowUp {
+  id              String   @id @default(cuid())
+  oportunidadeId  String
+  usuarioId       String?
+  tipo            String   @default("MANUAL") // MANUAL, AUTOMATICO, ORCAMENTO_PENDENTE
+  dataAgendada    DateTime
+  dataRealizada   DateTime?
+  status          String   @default("PENDENTE") // PENDENTE, REALIZADO, CANCELADO
+  nota            String?
+  whatsappEnviado Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  oportunidade    Oportunidade @relation(fields: [oportunidadeId], references: [id])
+  usuario         User?        @relation(fields: [usuarioId], references: [id])
+}
+
+// ─── FINANCEIRO ─────────────────────────────────────
+
+model Venda {
+  id              String   @id @default(cuid())
+  clienteId       String
+  oportunidadeId  String   @unique
+  valorTotal      Float
+  formaPagamento  String   // DINHEIRO, PIX, CARTAO_CREDITO, PARCELADO, MILHAS_DINHEIRO, BOLETO
+  parcelas        Int      @default(1)
+  statusPagamento String   @default("PENDENTE") // PENDENTE, PARCIAL, QUITADO
+  tipoNegocio     String   // VENDA_NORMAL, PONTOS_MILHAS
+  programaFidelidadeId String?
+  quantidadeMilhas Int?
+  valorMilheiro   Float?
+  lucroEstimado   Float?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  cliente         Cliente            @relation(fields: [clienteId], references: [id])
+  oportunidade    Oportunidade       @relation(fields: [oportunidadeId], references: [id])
+  programa        ProgramaFidelidade? @relation(fields: [programaFidelidadeId], references: [id])
+  itens           VendaItem[]
+  repasses        RepasseFornecedor[]
+  commission      Commission?
+}
+
+model VendaItem {
+  id          String   @id @default(cuid())
+  vendaId     String
+  servicoId   String
+  quantidade  Int      @default(1)
+  valorUnitario Float
+  valorTotal  Float
+  createdAt   DateTime @default(now())
+
+  venda       Venda            @relation(fields: [vendaId], references: [id])
+  servico     ServicoOferecido @relation(fields: [servicoId], references: [id])
+}
+
+model RepasseFornecedor {
+  id              String   @id @default(cuid())
+  vendaId         String
+  fornecedor      String
+  descricao       String?
+  valor           Float
+  dataVencimento  DateTime
+  status          String   @default("PENDENTE") // PENDENTE, PAGO, ATRASADO
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  venda           Venda    @relation(fields: [vendaId], references: [id])
+}
+
+model CompraMilhas {
+  id                    String   @id @default(cuid())
+  parceiroNome          String
+  parceiroCpf           String?
+  programaFidelidadeId  String
+  quantidadeMilhas      Int
+  valorPago             Float
+  valorMilheiro         Float
+  lucroEstimado         Float?
+  dataCompra            DateTime @default(now())
+  disponivel            Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  programa              ProgramaFidelidade @relation(fields: [programaFidelidadeId], references: [id])
+}
+
+model Commission {
+  id              String   @id @default(cuid())
+  vendaId         String   @unique
+  agenteId        String
+  valorVenda      Float
+  percentual      Float
+  valorComissao   Float
+  periodoApuracao String?  // ex: "2026-07"
+  statusPagamento String   @default("PENDENTE") // PENDENTE, PAGO
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  venda           Venda    @relation(fields: [vendaId], references: [id])
+  agente          User     @relation(fields: [agenteId], references: [id])
+}
+
+// ─── GESTÃO DE VIAGENS ──────────────────────────────
+
+model Viagem {
+  id              String   @id @default(cuid())
+  clienteId       String
+  oportunidadeId  String   @unique
+  agenteId        String?
+
+  status          String   @default("CONFIRMADA") // CONFIRMADA, CHECKIN_PENDENTE, EM_ANDAMENTO, CONCLUIDA
+  roteiroUrl      String?
+  voucherUrl      String?
+  guiaUrl         String?
+
+  feedbackNota        Int?
+  feedbackGostou      String?
+  feedbackMelhorar    String?
+  feedbackNPS         Int?
+  feedbackData        DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  cliente         Cliente      @relation(fields: [clienteId], references: [id])
+  oportunidade    Oportunidade @relation(fields: [oportunidadeId], references: [id])
+  agente          User?        @relation(fields: [agenteId], references: [id])
+  voos            Voo[]
+  hospedagens     Hospedagem[]
+  servicosAdicionais ServicoAdicionalViagem[]
+}
+
+model Voo {
+  id              String   @id @default(cuid())
+  viagemId        String
+  companhiaAereaId String?
+  tipo            String   @default("IDA") // IDA, VOLTA
+  numeroVoo       String?
+  dataHora        DateTime
+  localizador     String?
+  classe          String   @default("ECONOMICA") // ECONOMICA, EXECUTIVA, PRIMEIRA
+  bagagemKg       Int?
+  checkinUrl      String?
+  status          String   @default("AGUARDANDO") // AGUARDANDO, CHECKIN_FEITO, EMBARCADO, CONCLUIDO
+  eTicketUrl      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  viagem          Viagem          @relation(fields: [viagemId], references: [id])
+  companhiaAerea  CompanhiaAerea? @relation(fields: [companhiaAereaId], references: [id])
+}
+
+model Hospedagem {
+  id              String   @id @default(cuid())
+  viagemId        String
+  hotelNome       String
+  endereco        String?
+  telefone        String?
+  checkin         DateTime
+  checkout        DateTime
+  numeroReserva   String?
+  tipoQuarto      String?
+  regime          String?   // CAFE, MEIA, COMPLETA, ALL_INCLUSIVE
+  statusConfirmacao String @default("CONFIRMADO")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  viagem          Viagem    @relation(fields: [viagemId], references: [id])
+}
+
+model ServicoAdicionalViagem {
+  id          String   @id @default(cuid())
+  viagemId    String
+  tipo        String   // SEGURO, TRANSLADO, PASSEIO, ALUGUEL_CARRO
+  descricao   String
+  fornecedor  String?
+  numeroReserva String?
+  dataHora    DateTime?
+  valor       Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  viagem      Viagem    @relation(fields: [viagemId], references: [id])
+}
+
+// ─── WHATSAPP ───────────────────────────────────────
+
+model MensagemWhatsApp {
+  id            String   @id @default(cuid())
+  clienteId     String
+  tipo          String   // FOLLOW_UP, CHECKIN, ANIVERSARIO, ORCAMENTO, POS_VIAGEM, MANUAL
+  mensagem      String
+  status        String   @default("PENDENTE") // PENDENTE, ENVIADO, FALHA
+  enviadoEm     DateTime?
+  templateId    String?
+  createdAt     DateTime @default(now())
+
+  cliente       Cliente  @relation(fields: [clienteId], references: [id])
+}
+
+model WhatsAppConfig {
+  id          String   @id @default("main")
+  provider    String   @default("EVOLUTION_API") // EVOLUTION_API, WPPCONNECT, TWILIO
+  apiUrl      String?
+  apiKey      String?
+  instanceName String?
+  enabled     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── BACKUP & AUDITORIA ─────────────────────────────
+
+model BackupLog {
+  id        String   @id @default(cuid())
+  filename  String
+  size      Int      // bytes
+  type      String   @default("MANUAL") // MANUAL, AUTOMATICO
+  status    String   @default("SUCESSO") // SUCESSO, FALHA
+  githubCommit String?
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id])
+}
