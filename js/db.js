@@ -1,136 +1,133 @@
 /* ============================================================
-   db.js — Banco de Dados Local (localStorage)
+   db.js — Camada de Dados (localStorage)
    ============================================================ */
 
+const DB_PREFIX = 'crm_wdih_';
+
 const DB = {
-    // Chaves do localStorage
-    KEYS: {
-        AGENCIA: 'wdih_agencia',
-        USUARIO: 'wdih_usuario',
-        CLIENTES: 'wdih_clientes',
-        NEGOCIOS: 'wdih_negocios',
-        VIAGENS: 'wdih_viagens',
-        TRANSACOES: 'wdih_transacoes',
-        SERVICOS: 'wdih_servicos',
-        PIPELINE_STAGES: 'wdih_pipeline_stages',
-        COMPANHIAS: 'wdih_companhias',
-        PROGRAMAS: 'wdih_programas',
-        CARTOES: 'wdih_cartoes',
-        ATIVIDADES: 'wdih_atividades',
-        SETUP_DONE: 'wdih_setup_done'
+    _key(k) { return DB_PREFIX + k; },
+    _get(k) { return JSON.parse(localStorage.getItem(this._key(k)) || 'null'); },
+    _set(k, v) { localStorage.setItem(this._key(k), JSON.stringify(v)); },
+
+    gerarId(prefix) {
+        return (prefix || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
     },
 
-    // Métodos genéricos
-    get(key) {
-        try {
-            const data = localStorage.getItem(key);
-            return data ? JSON.parse(data) : null;
-        } catch (e) {
-            console.error('DB.get error:', e);
-            return null;
-        }
+    // ========== AGÊNCIA ==========
+    getAgencia() { return this._get('agencia') || { nome: 'WDIH Milhas & Viagens', cnpj: '', telefone: '', email: '' }; },
+    setAgencia(d) { this._set('agencia', d); },
+
+    // ========== CLIENTES ==========
+    getClientes() { return this._get('clientes') || []; },
+    setClientes(d) { this._set('clientes', d); },
+
+    // ========== NEGÓCIOS (Pipeline) ==========
+    getNegocios() { return this._get('negocios') || []; },
+    setNegocios(d) { this._set('negocios', d); },
+    saveNegocio(negocio) {
+        const negocios = this.getNegocios();
+        const idx = negocios.findIndex(n => n.id === negocio.id);
+        if (idx >= 0) { negocios[idx] = negocio; }
+        else { negocios.push(negocio); }
+        this._set('negocios', negocios);
+        return negocio;
+    },
+    deleteNegocio(id) {
+        this._set('negocios', this.getNegocios().filter(n => n.id !== id));
     },
 
-    set(key, value) {
-        try {
-            localStorage.setItem(key, JSON.stringify(value));
-            return true;
-        } catch (e) {
-            console.error('DB.set error (storage may be full):', e);
-            return false;
-        }
+    // ========== VENDAS ==========
+    getVendas() { return this._get('vendas') || []; },
+    saveVenda(venda) {
+        const vendas = this.getVendas();
+        const idx = vendas.findIndex(v => v.id === venda.id);
+        venda.atualizadoEm = new Date().toISOString();
+        if (idx >= 0) { vendas[idx] = venda; }
+        else { venda.criadoEm = venda.criadoEm || new Date().toISOString(); vendas.push(venda); }
+        this._set('vendas', vendas);
+        this.logAtividade('venda', `Venda "${venda.titulo}" ${idx >= 0 ? 'atualizada' : 'criada'}`);
+        return venda;
+    },
+    deleteVenda(id) {
+        this._set('vendas', this.getVendas().filter(v => v.id !== id));
+        this.logAtividade('venda', 'Venda removida');
+    },
+    getVendaById(id) { return this.getVendas().find(v => v.id === id); },
+
+    // ========== VIAGENS ==========
+    getViagens() { return this._get('viagens') || []; },
+    setViagens(d) { this._set('viagens', d); },
+
+    // ========== TRANSAÇÕES ==========
+    getTransacoes() { return this._get('transacoes') || []; },
+    setTransacoes(d) { this._set('transacoes', d); },
+
+    // ========== SERVIÇOS ==========
+    getServicos() { return this._get('servicos') || ['Pacote Completo', 'Passagem Aérea', 'Cruzeiro', 'Hotel', 'Intercâmbio', 'Seguro Viagem', 'Aluguel de Carro', 'Milhas']; },
+    setServicos(d) { this._set('servicos', d); },
+
+    // ========== PIPELINE STAGES ==========
+    getPipelineStages() {
+        return this._get('pipelineStages') || [
+            'Negociações Futuras', 'Em Negociação', 'Proposta Enviada',
+            'Acompanhamento', 'Fechado (Ganho)', 'Fechado (Perdido)'
+        ];
+    },
+    setPipelineStages(d) { this._set('pipelineStages', d); },
+
+    // ========== COMPANHIAS ==========
+    getCompanhias() { return this._get('companhias') || ['LATAM', 'Gol', 'Azul', 'American Airlines', 'Delta', 'United', 'Emirates', 'Qatar Airways']; },
+    setCompanhias(d) { this._set('companhias', d); },
+
+    // ========== PROGRAMAS ==========
+    getProgramas() { return this._get('programas') || ['LATAM Pass', 'Smiles', 'TudoAzul', 'Livelo', 'Esfera']; },
+    setProgramas(d) { this._set('programas', d); },
+
+    // ========== CARTÕES ==========
+    getCartoes() { return this._get('cartoes') || []; },
+    setCartoes(d) { this._set('cartoes', d); },
+
+    // ========== ORIGENS DE LEAD ==========
+    getOrigensLead() {
+        return ['Instagram', 'Facebook', 'Google Ads', 'Indicação', 'WhatsApp', 'Email Marketing', 'Site', 'Feira/Evento', 'Parceria', 'Prospecção Ativa', 'Outros'];
     },
 
-    remove(key) {
-        localStorage.removeItem(key);
-    },
-
-    clearAll() {
-        Object.values(this.KEYS).forEach(k => localStorage.removeItem(k));
-    },
-
-    // Geração de IDs
-    uid() {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
-    },
-
-    // Métodos específicos
-    getClientes() { return this.get(this.KEYS.CLIENTES) || []; },
-    setClientes(data) { return this.set(this.KEYS.CLIENTES, data); },
-
-    getNegocios() { return this.get(this.KEYS.NEGOCIOS) || []; },
-    setNegocios(data) { return this.set(this.KEYS.NEGOCIOS, data); },
-
-    getViagens() { return this.get(this.KEYS.VIAGENS) || []; },
-    setViagens(data) { return this.set(this.KEYS.VIAGENS, data); },
-
-    getTransacoes() { return this.get(this.KEYS.TRANSACOES) || []; },
-    setTransacoes(data) { return this.set(this.KEYS.TRANSACOES, data); },
-
-    getServicos() { return this.get(this.KEYS.SERVICOS) || []; },
-    setServicos(data) { return this.set(this.KEYS.SERVICOS, data); },
-
-    getPipelineStages() { return this.get(this.KEYS.PIPELINE_STAGES) || []; },
-    setPipelineStages(data) { return this.set(this.KEYS.PIPELINE_STAGES, data); },
-
-    getCompanhias() { return this.get(this.KEYS.COMPANHIAS) || []; },
-    setCompanhias(data) { return this.set(this.KEYS.COMPANHIAS, data); },
-
-    getProgramas() { return this.get(this.KEYS.PROGRAMAS) || []; },
-    setProgramas(data) { return this.set(this.KEYS.PROGRAMAS, data); },
-
-    getCartoes() { return this.get(this.KEYS.CARTOES) || []; },
-    setCartoes(data) { return this.set(this.KEYS.CARTOES, data); },
-
-    getAgencia() { return this.get(this.KEYS.AGENCIA) || {}; },
-    setAgencia(data) { return this.set(this.KEYS.AGENCIA, data); },
-
-    getUsuario() { return this.get(this.KEYS.USUARIO) || null; },
-    setUsuario(data) { return this.set(this.KEYS.USUARIO, data); },
-
-    getAtividades() { return this.get(this.KEYS.ATIVIDADES) || []; },
-    setAtividades(data) { return this.set(this.KEYS.ATIVIDADES, data); },
-
-    isSetupDone() { return this.get(this.KEYS.SETUP_DONE) === true; },
-    setSetupDone() { return this.set(this.KEYS.SETUP_DONE, true); },
-
-    // Registrar atividade
+    // ========== ATIVIDADES ==========
+    getAtividades() { return this._get('atividades') || []; },
     logAtividade(tipo, descricao) {
         const atividades = this.getAtividades();
-        atividades.unshift({
-            id: this.uid(),
-            tipo,
-            descricao,
-            data: new Date().toISOString()
-        });
-        // Manter apenas últimas 50
-        if (atividades.length > 50) atividades.length = 50;
-        this.setAtividades(atividades);
+        atividades.unshift({ tipo, descricao, data: new Date().toISOString() });
+        if (atividades.length > 100) atividades.length = 100;
+        this._set('atividades', atividades);
     },
 
-    // Dados iniciais padrão
-    seedDefaults() {
-        if (!this.getServicos().length) {
-            this.setServicos([
-                'Emissão de Passagens', 'Seguro Viagem', 'Hospedagem',
-                'Pacotes de Viagem', 'Aluguel de Carro', 'Consultoria de Milhas',
-                'Visto e Documentação', 'Transfer / Transporte', 'Cruzeiros'
+    // ========== CLEAR ALL ==========
+    clearAll() {
+        const keys = ['agencia', 'clientes', 'negocios', 'vendas', 'viagens', 'transacoes', 'servicos', 'pipelineStages', 'companhias', 'programas', 'cartoes', 'atividades'];
+        keys.forEach(k => localStorage.removeItem(this._key(k)));
+    },
+
+    // ========== SEED ==========
+    seed() {
+        if (!this.getClientes().length && !this.getNegocios().length) {
+            this.setClientes([
+                { id: 'cli-001', nome: 'Maria Silva', email: 'maria@email.com', telefone: '(11) 99999-0001', cpf: '', status: 'Ativo', notas: 'Cliente desde 2024', criadoEm: '2025-01-10T00:00:00Z' },
+                { id: 'cli-002', nome: 'João Oliveira', email: 'joao@email.com', telefone: '(11) 99999-0002', cpf: '', status: 'Ativo', notas: '', criadoEm: '2025-03-15T00:00:00Z' }
             ]);
-        }
-        if (!this.getPipelineStages().length) {
-            this.setPipelineStages([
-                'Lead / Contato Inicial', 'Qualificação', 'Proposta Enviada',
-                'Negociação', 'Fechado (Ganho)', 'Pós-Venda'
+            this.setNegocios([
+                { id: 'neg-001', titulo: 'Pacote Orlando - Família Silva', clienteId: 'cli-001', servico: 'Pacote Completo', valor: 15000, stage: 'Em Negociação', probabilidade: 60, descricao: 'Família de 4 pessoas, interesse em parques', origemLead: 'Instagram', campanha: 'Férias de Verão 2026', criadoEm: '2026-06-15T10:00:00Z', atualizadoEm: '2026-07-10T10:00:00Z' },
+                { id: 'neg-002', titulo: 'Cruzeiro Caribe - Casal Oliveira', clienteId: 'cli-002', servico: 'Cruzeiro', valor: 22000, stage: 'Proposta Enviada', probabilidade: 80, descricao: 'Casal interessado em suíte com varanda', origemLead: 'Indicação', campanha: 'Cruzeiros 2026', criadoEm: '2026-06-20T10:00:00Z', atualizadoEm: '2026-07-15T10:00:00Z' },
+                { id: 'neg-003', titulo: 'Intercâmbio Londres - João', clienteId: null, servico: 'Intercâmbio', valor: 35000, stage: 'Negociações Futuras', probabilidade: 20, descricao: 'Lead novo, interesse para 2027', origemLead: 'Google Ads', campanha: 'Intercâmbio 2027', criadoEm: '2026-07-18T10:00:00Z', atualizadoEm: '2026-07-18T10:00:00Z' }
             ]);
-        }
-        if (!this.getCompanhias().length) {
-            this.setCompanhias(['LATAM', 'Gol', 'Azul', 'American Airlines', 'Delta', 'United', 'Air France', 'Emirates']);
-        }
-        if (!this.getProgramas().length) {
-            this.setProgramas(['Smiles', 'LATAM Pass', 'TudoAzul', 'Livelo', 'Esfera', 'Miles&More', 'Flying Blue']);
-        }
-        if (!this.getCartoes().length) {
-            this.setCartoes(['C6 Bank', 'XP', 'Santander', 'Bradesco', 'Itaú', 'Banco do Brasil', 'Nubank', 'Inter']);
+            this.setViagens([]);
+            this.setTransacoes([
+                { id: 'tr-001', descricao: 'Comissão - Pacote Orlando', tipo: 'Receita', categoria: 'Comissões', valor: 1500, data: '2026-07-01' },
+                { id: 'tr-002', descricao: 'Anúncios Instagram', tipo: 'Despesa', categoria: 'Marketing', valor: 350, data: '2026-07-05' }
+            ]);
+            this.logAtividade('sistema', 'Sistema inicializado com dados de exemplo');
         }
     }
 };
+
+// Inicializa seed
+DB.seed();

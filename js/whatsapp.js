@@ -3,7 +3,7 @@
    ============================================================ */
 
 const WhatsApp = {
-    link(telefone, mensagem = '') {
+    link(telefone, mensagem) {
         if (!telefone) return '';
         const numeroLimpo = telefone.replace(/\D/g, '');
         if (!numeroLimpo) return '';
@@ -14,11 +14,8 @@ const WhatsApp = {
         return `<a href="${url}" target="_blank" class="whatsapp-btn" title="Abrir WhatsApp">💬</a>`;
     },
 
-    abrir(telefone, mensagem = '') {
-        if (!telefone) {
-            App.toast('Telefone não informado', 'error');
-            return;
-        }
+    abrir(telefone, mensagem) {
+        if (!telefone) { AppModule.showToast('Telefone não informado', 'error'); return; }
         const numeroLimpo = telefone.replace(/\D/g, '');
         const numero = numeroLimpo.startsWith('55') ? numeroLimpo : '55' + numeroLimpo;
         const url = mensagem
@@ -27,7 +24,6 @@ const WhatsApp = {
         window.open(url, '_blank');
     },
 
-    // Mensagens pré-definidas
     mensagens: {
         saudacao: (nome) => `Olá ${nome}, tudo bem? Aqui é da WDIH Milhas & Viagens. Como posso te ajudar hoje?`,
         proposta: (nome) => `Olá ${nome}! Preparei uma proposta especial para você. Podemos conversar?`,

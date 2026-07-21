@@ -1,186 +1,189 @@
 /* ============================================================
-   crm.js — Pipeline Kanban com Drag & Drop
+   crm.js — Pipeline Kanban com Origem, Campanha e Vendas
    ============================================================ */
 
 const CRMModule = {
-    draggedCard: null,
-
-    init() {
-        this.render();
-        document.getElementById('btn-novo-negocio').addEventListener('click', () => this.openForm());
-    },
+    init() { this.render(); },
+    refresh() { this.render(); },
 
     render() {
-        const board = document.getElementById('kanban-board');
         const stages = DB.getPipelineStages();
         const negocios = DB.getNegocios();
         const clientes = DB.getClientes();
+        const container = document.getElementById('pipeline-container');
+        if (!container) return;
 
-        board.innerHTML = stages.map(stage => {
+        if (!stages.length) {
+            container.innerHTML = '<p style="padding:24px;text-align:center;color:var(--gray-500);">Configure as etapas do pipeline nas ⚙️ Configurações</p>';
+            return;
+        }
+
+        container.innerHTML = stages.map(stage => {
             const cards = negocios.filter(n => n.stage === stage);
             return `
-                <div class="kanban-coluna" data-stage="${stage}">
-                    <div class="kanban-coluna-header">
-                        <h3>${stage}</h3>
-                        <span class="kanban-coluna-count">${cards.length}</span>
+                <div class="kanban-coluna" data-stage="${stage}"
+                     ondragover="CRMModule.allowDrop(event)"
+                     ondrop="CRMModule.drop(event, '${stage.replace(/'/g, "\\'")}')">
+                    <div class="kanban-header">
+                        <span class="kanban-titulo">${stage}</span>
+                        <span class="kanban-count">${cards.length}</span>
                     </div>
-                    <div class="kanban-cards" data-dropzone="${stage}">
-                        ${cards.map(n => {
-                            const cliente = clientes.find(c => c.id === n.clienteId);
-                            return `
-                                <div class="kanban-card" draggable="true" data-id="${n.id}">
-                                    <div class="kanban-card-title">${n.titulo}</div>
-                                    <div class="kanban-card-cliente">${cliente ? cliente.nome : 'Sem cliente'}</div>
-                                    <div class="kanban-card-footer">
-                                        <span>${n.servico || ''}</span>
-                                        <span class="kanban-card-valor">${n.valor ? 'R$ ' + Number(n.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2}) : ''}</span>
-                                    </div>
-                                </div>
-                            `;
-                        }).join('')}
+                    <div class="kanban-cards">
+                        ${cards.map(n => this.renderCard(n, clientes)).join('')}
                     </div>
+                    <button class="btn-kanban-add" onclick="CRMModule.abrirModalNegocio('${stage.replace(/'/g, "\\'")}')">+ Adicionar</button>
                 </div>
             `;
         }).join('');
-
-        this.bindDragDrop();
-        this.bindCardClick();
     },
 
-    bindDragDrop() {
-        document.querySelectorAll('.kanban-card').forEach(card => {
-            card.addEventListener('dragstart', (e) => {
-                this.draggedCard = card;
-                card.classList.add('dragging');
-                e.dataTransfer.effectAllowed = 'move';
-            });
-            card.addEventListener('dragend', () => {
-                card.classList.remove('dragging');
-                document.querySelectorAll('.kanban-coluna').forEach(c => c.classList.remove('highlight'));
-            });
-        });
+    renderCard(negocio, clientes) {
+        const cliente = clientes.find(c => c.id === negocio.clienteId);
+        const valor = negocio.valor ? 'R$ ' + Number(negocio.valor).toLocaleString('pt-BR', { minimumFractionDigits: 0 }) : '';
+        const origemBadge = negocio.origemLead ? `<span class="badge badge-origem">📌 ${negocio.origemLead}</span>` : '';
+        const campanhaTag = negocio.campanha ? `<span class="badge badge-campanha">📢 ${negocio.campanha}</span>` : '';
+        const probabilidade = negocio.probabilidade ? `<span class="kanban-probabilidade">${negocio.probabilidade}%</span>` : '';
 
-        document.querySelectorAll('.kanban-cards').forEach(zone => {
-            zone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                zone.closest('.kanban-coluna').classList.add('highlight');
-            });
-            zone.addEventListener('dragleave', () => {
-                zone.closest('.kanban-coluna').classList.remove('highlight');
-            });
-            zone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                const newStage = zone.dataset.dropzone;
-                const negocioId = this.draggedCard.dataset.id;
-                this.moveNegocio(negocioId, newStage);
-                zone.closest('.kanban-coluna').classList.remove('highlight');
-            });
-        });
+        return `
+            <div class="kanban-card" draggable="true" data-id="${negocio.id}"
+                 ondragstart="CRMModule.drag(event)"
+                 ondblclick="CRMModule.abrirModalNegocio(null, '${negocio.id}')">
+                <div class="kanban-card-header"><strong>${negocio.titulo}</strong>${probabilidade}</div>
+                <div class="kanban-card-cliente">${cliente ? '👤 ' + cliente.nome : '⚠️ Sem cliente'}</div>
+                ${valor ? `<div class="kanban-card-valor">${valor}</div>` : ''}
+                <div class="kanban-card-badges">${origemBadge}${campanhaTag}</div>
+                <div class="kanban-card-actions">
+                    <button class="btn-sm" onclick="event.stopPropagation();CRMModule.abrirModalNegocio(null,'${negocio.id}')">✏️</button>
+                    <button class="btn-sm btn-sm-danger" onclick="event.stopPropagation();CRMModule.excluirNegocio('${negocio.id}')">🗑️</button>
+                </div>
+            </div>
+        `;
     },
 
-    bindCardClick() {
-        document.querySelectorAll('.kanban-card').forEach(card => {
-            card.addEventListener('dblclick', () => this.openForm(card.dataset.id));
-        });
-    },
+    drag(ev) { ev.dataTransfer.setData('text/plain', ev.target.closest('.kanban-card').dataset.id); },
+    allowDrop(ev) { ev.preventDefault(); },
 
-    moveNegocio(id, newStage) {
-        const negocios = DB.getNegocios();
-        const idx = negocios.findIndex(n => n.id === id);
-        if (idx === -1) return;
+    drop(ev, newStage) {
+        ev.preventDefault();
+        const negocioId = ev.dataTransfer.getData('text/plain');
+        if (!negocioId) return;
+        const negocio = DB.getNegocios().find(n => n.id === negocioId);
+        if (!negocio) return;
 
-        negocios[idx].stage = newStage;
-        negocios[idx].atualizadoEm = new Date().toISOString();
-        DB.setNegocios(negocios);
+        const oldStage = negocio.stage;
+        negocio.stage = newStage;
+        negocio.atualizadoEm = new Date().toISOString();
+        DB.saveNegocio(negocio);
 
-        DB.logAtividade('pipeline', `Negócio "${negocios[idx].titulo}" movido para "${newStage}"`);
+        if (this.isFechadoGanho(newStage) && !negocio.vendaId) {
+            this.criarVendaAutomatica(negocio);
+        }
         this.render();
-        DashboardModule.refresh();
     },
 
-    openForm(id = null) {
-        const negocio = id ? DB.getNegocios().find(n => n.id === id) : {
-            titulo: '', clienteId: '', servico: '', valor: '', stage: DB.getPipelineStages()[0] || 'Lead',
-            descricao: '', probabilidade: 50
+    isFechadoGanho(stage) {
+        const s = stage.toLowerCase();
+        return s.includes('fechado') && s.includes('ganho');
+    },
+
+    criarVendaAutomatica(negocio) {
+        const venda = {
+            id: DB.gerarId('venda'),
+            negocioId: negocio.id,
+            clienteId: negocio.clienteId,
+            titulo: negocio.titulo,
+            servico: negocio.servico || '',
+            valorOriginal: negocio.valor || 0,
+            valorVenda: negocio.valor || 0,
+            tipoVenda: 'dinheiro',
+            nomeTerceiro: '',
+            necessidadeCheckin: 'nao',
+            novo: true,
+            criadoEm: new Date().toISOString(),
+            atualizadoEm: new Date().toISOString()
         };
-        const clientes = DB.getClientes();
-        const servicos = DB.getServicos();
-        const stages = DB.getPipelineStages();
-
-        Modal.open(id ? 'Editar Negócio' : 'Novo Negócio', `
-            <div class="input-group">
-                <label>Título / Descrição *</label>
-                <input type="text" id="neg-titulo" value="${negocio.titulo}" placeholder="Ex: Viagem para Paris - Família Silva">
-            </div>
-            <div class="input-group">
-                <label>Cliente</label>
-                <select id="neg-cliente">
-                    <option value="">-- Selecione --</option>
-                    ${clientes.map(c => `<option value="${c.id}" ${c.id === negocio.clienteId ? 'selected' : ''}>${c.nome}</option>`).join('')}
-                </select>
-            </div>
-            <div class="input-group">
-                <label>Serviço</label>
-                <select id="neg-servico">
-                    <option value="">-- Selecione --</option>
-                    ${servicos.map(s => `<option ${s === negocio.servico ? 'selected' : ''}>${s}</option>`).join('')}
-                </select>
-            </div>
-            <div class="input-group">
-                <label>Valor Estimado (R$)</label>
-                <input type="number" id="neg-valor" value="${negocio.valor || ''}" step="0.01" min="0">
-            </div>
-            <div class="input-group">
-                <label>Etapa</label>
-                <select id="neg-stage">
-                    ${stages.map(s => `<option ${s === negocio.stage ? 'selected' : ''}>${s}</option>`).join('')}
-                </select>
-            </div>
-            <div class="input-group">
-                <label>Probabilidade (%)</label>
-                <input type="number" id="neg-prob" value="${negocio.probabilidade || 50}" min="0" max="100">
-            </div>
-            <div class="input-group">
-                <label>Observações</label>
-                <textarea id="neg-desc">${negocio.descricao || ''}</textarea>
-            </div>
-        `, [
-            { label: 'Cancelar', class: 'btn-outline', action: () => Modal.close() },
-            { label: id ? 'Salvar' : 'Criar', class: 'btn-primary', action: () => this.save(id) }
-        ]);
+        DB.saveVenda(venda);
+        negocio.vendaId = venda.id;
+        DB.saveNegocio(negocio);
+        AppModule.showToast('✅ Venda criada automaticamente! Acesse a aba Vendas para preencher os detalhes.', 'success');
     },
 
-    save(id) {
-        const titulo = document.getElementById('neg-titulo').value.trim();
-        if (!titulo) { App.toast('Título é obrigatório!', 'error'); return; }
+    abrirModalNegocio(stagePredefinida, negocioId) {
+        const negocio = negocioId ? DB.getNegocios().find(n => n.id === negocioId) : null;
+        const clientes = DB.getClientes();
+        const stages = DB.getPipelineStages();
+        const origens = DB.getOrigensLead();
+        const stage = negocio ? negocio.stage : (stagePredefinida || stages[0]);
 
-        const dados = {
-            titulo,
-            clienteId: document.getElementById('neg-cliente').value,
+        const optionsClientes = clientes.map(c => `<option value="${c.id}" ${negocio && negocio.clienteId === c.id ? 'selected' : ''}>${c.nome}</option>`).join('');
+        const optionsStages = stages.map(s => `<option value="${s}" ${stage === s ? 'selected' : ''}>${s}</option>`).join('');
+        const optionsOrigens = origens.map(o => `<option value="${o}" ${negocio && negocio.origemLead === o ? 'selected' : ''}>${o}</option>`).join('');
+
+        const html = `
+            <form id="form-negocio" onsubmit="CRMModule.salvarNegocio(event, '${negocioId || ''}')">
+                <input type="hidden" id="neg-id" value="${negocio ? negocio.id : ''}">
+                <div class="form-group"><label>Título do Negócio *</label><input type="text" id="neg-titulo" value="${negocio ? negocio.titulo : ''}" required></div>
+                <div class="form-row">
+                    <div class="form-group"><label>Cliente</label><select id="neg-cliente"><option value="">Selecione...</option>${optionsClientes}</select></div>
+                    <div class="form-group"><label>Serviço</label><input type="text" id="neg-servico" value="${negocio ? negocio.servico || '' : ''}"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Valor (R$)</label><input type="number" id="neg-valor" step="0.01" value="${negocio ? negocio.valor || '' : ''}"></div>
+                    <div class="form-group"><label>Probabilidade (%)</label><input type="number" id="neg-probabilidade" min="0" max="100" value="${negocio ? negocio.probabilidade || '' : ''}"></div>
+                </div>
+                <div class="form-group"><label>Etapa</label><select id="neg-stage">${optionsStages}</select></div>
+                <div class="form-row">
+                    <div class="form-group"><label>📌 Origem do Lead</label><select id="neg-origem"><option value="">Selecione...</option>${optionsOrigens}</select></div>
+                    <div class="form-group"><label>📢 Nome da Campanha</label><input type="text" id="neg-campanha" value="${negocio ? negocio.campanha || '' : ''}" placeholder="Ex: Férias de Verão 2026"></div>
+                </div>
+                <div class="form-group"><label>Descrição</label><textarea id="neg-descricao" rows="3">${negocio ? negocio.descricao || '' : ''}</textarea></div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-outline" onclick="AppModule.fecharModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">💾 Salvar</button>
+                </div>
+            </form>
+        `;
+        AppModule.abrirModal(negocio ? 'Editar Negócio' : 'Novo Negócio', html);
+    },
+
+    salvarNegocio(event, editId) {
+        event.preventDefault();
+        const newStage = document.getElementById('neg-stage').value;
+        const negocio = {
+            id: editId || DB.gerarId('negocio'),
+            titulo: document.getElementById('neg-titulo').value,
+            clienteId: document.getElementById('neg-cliente').value || null,
             servico: document.getElementById('neg-servico').value,
             valor: parseFloat(document.getElementById('neg-valor').value) || 0,
-            stage: document.getElementById('neg-stage').value,
-            probabilidade: parseInt(document.getElementById('neg-prob').value) || 50,
-            descricao: document.getElementById('neg-desc').value.trim()
+            probabilidade: parseInt(document.getElementById('neg-probabilidade').value) || 0,
+            stage: newStage,
+            origemLead: document.getElementById('neg-origem').value,
+            campanha: document.getElementById('neg-campanha').value,
+            descricao: document.getElementById('neg-descricao').value,
+            criadoEm: editId ? (DB.getNegocios().find(n => n.id === editId)?.criadoEm || new Date().toISOString()) : new Date().toISOString(),
+            atualizadoEm: new Date().toISOString()
         };
-
-        const negocios = DB.getNegocios();
-
-        if (id) {
-            const idx = negocios.findIndex(n => n.id === id);
-            negocios[idx] = { ...negocios[idx], ...dados, atualizadoEm: new Date().toISOString() };
-            DB.logAtividade('pipeline', `Negócio atualizado: ${titulo}`);
-        } else {
-            dados.id = DB.uid();
-            dados.criadoEm = new Date().toISOString();
-            negocios.push(dados);
-            DB.logAtividade('pipeline', `Novo negócio: ${titulo}`);
+        if (editId) {
+            const existente = DB.getNegocios().find(n => n.id === editId);
+            if (existente) negocio.vendaId = existente.vendaId;
         }
+        const oldStage = editId ? DB.getNegocios().find(n => n.id === editId)?.stage : null;
+        DB.saveNegocio(negocio);
 
-        DB.setNegocios(negocios);
-        Modal.close();
+        if (this.isFechadoGanho(newStage) && oldStage !== newStage && !negocio.vendaId) {
+            this.criarVendaAutomatica(negocio);
+        }
+        AppModule.fecharModal();
         this.render();
-        DashboardModule.refresh();
-        App.toast('Negócio salvo!', 'success');
+        AppModule.showToast('Negócio salvo com sucesso! ✅', 'success');
+    },
+
+    excluirNegocio(id) {
+        if (!confirm('Tem certeza que deseja excluir este negócio?')) return;
+        const negocio = DB.getNegocios().find(n => n.id === id);
+        if (negocio && negocio.vendaId) DB.deleteVenda(negocio.vendaId);
+        DB.deleteNegocio(id);
+        this.render();
+        AppModule.showToast('Negócio excluído 🗑️', 'info');
     }
 };

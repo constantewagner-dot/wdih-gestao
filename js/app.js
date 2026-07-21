@@ -2,76 +2,109 @@
    app.js — Núcleo do Sistema (rotas, modal, toast, init)
    ============================================================ */
 
-const App = {
+const AppModule = {
     init() {
         this.setupRouting();
         this.setupModal();
-        this.setupBackupButton();
-        ConfigModule.init();
-        ClientesModule.init();
-        CRMModule.init();
-        ViagensModule.init();
-        FinanceiroModule.init();
-        DashboardModule.init();
-        BackupModule.init();
+        this.setupBackup();
+
+        // Inicializa módulos
+        if (typeof ConfigModule !== 'undefined') ConfigModule.init();
+        if (typeof ClientesModule !== 'undefined') ClientesModule.init();
+        if (typeof CRMModule !== 'undefined') CRMModule.init();
+        if (typeof ViagensModule !== 'undefined') ViagensModule.init();
+        if (typeof VendasModule !== 'undefined') VendasModule.init();
+        if (typeof FinanceiroModule !== 'undefined') FinanceiroModule.init();
+        if (typeof DashboardModule !== 'undefined') DashboardModule.init();
+        if (typeof BackupModule !== 'undefined') BackupModule.init();
 
         // Rota inicial
-        const hash = window.location.hash || '#dashboard';
-        this.navigate(hash.substring(1));
+        const hash = window.location.hash.substring(1) || 'dashboard';
+        this.navigate(hash);
     },
 
     setupRouting() {
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.addEventListener('click', (e) => {
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', (e) => {
                 e.preventDefault();
-                const page = item.dataset.page;
-                window.location.hash = page;
-                this.navigate(page);
+                const section = link.dataset.section;
+                window.location.hash = '#' + section;
+                this.navigate(section);
             });
         });
-
         window.addEventListener('hashchange', () => {
-            const page = window.location.hash.substring(1) || 'dashboard';
-            this.navigate(page);
+            this.navigate(window.location.hash.substring(1) || 'dashboard');
         });
     },
 
-    navigate(page) {
-        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    navigate(section) {
+        const secoes = ['section-dashboard', 'section-pipeline', 'section-clientes', 'section-viagens', 'section-vendas', 'section-financeiro', 'section-config'];
+        secoes.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('active');
+        });
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
 
-        const section = document.getElementById(`section-${page}`);
-        const navItem = document.querySelector(`.nav-item[data-page="${page}"]`);
+        const target = document.getElementById('section-' + section);
+        const navLink = document.querySelector(`.nav-link[data-section="${section}"]`);
 
-        if (section) section.classList.add('active');
-        if (navItem) navItem.classList.add('active');
+        if (target) target.classList.add('active');
+        if (navLink) navLink.classList.add('active');
 
         // Refresh do módulo
-        if (page === 'dashboard') DashboardModule.refresh();
-        if (page === 'pipeline') CRMModule.render();
-        if (page === 'clientes') ClientesModule.render();
-        if (page === 'viagens') ViagensModule.render();
-        if (page === 'financeiro') FinanceiroModule.render();
-        if (page === 'config') ConfigModule.init();
+        const moduleMap = {
+            'dashboard': () => { if (typeof DashboardModule !== 'undefined') DashboardModule.refresh(); },
+            'pipeline': () => { if (typeof CRMModule !== 'undefined') CRMModule.refresh(); },
+            'clientes': () => { if (typeof ClientesModule !== 'undefined') ClientesModule.render(); },
+            'viagens': () => { if (typeof ViagensModule !== 'undefined') ViagensModule.render(); },
+            'vendas': () => { if (typeof VendasModule !== 'undefined') VendasModule.refresh(); },
+            'financeiro': () => { if (typeof FinanceiroModule !== 'undefined') FinanceiroModule.render(); },
+            'config': () => { if (typeof ConfigModule !== 'undefined') ConfigModule.init(); }
+        };
+        if (moduleMap[section]) moduleMap[section]();
     },
 
     setupModal() {
-        document.getElementById('modal-close').addEventListener('click', () => Modal.close());
+        document.getElementById('modal-close').addEventListener('click', () => this.fecharModal());
         document.getElementById('modal-overlay').addEventListener('click', (e) => {
-            if (e.target.id === 'modal-overlay') Modal.close();
+            if (e.target.id === 'modal-overlay') this.fecharModal();
         });
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') Modal.close();
+            if (e.key === 'Escape') this.fecharModal();
         });
     },
 
-    setupBackupButton() {
-        document.getElementById('btn-backup').addEventListener('click', () => BackupModule.exportJSON());
+    abrirModal(titulo, bodyHTML, botoes) {
+        document.getElementById('modal-title').textContent = titulo;
+        document.getElementById('modal-body').innerHTML = bodyHTML;
+        const footer = document.getElementById('modal-footer');
+        footer.innerHTML = '';
+        if (botoes) {
+            botoes.forEach(b => {
+                const btn = document.createElement('button');
+                btn.className = 'btn ' + (b.class || 'btn-outline');
+                btn.textContent = b.label;
+                btn.addEventListener('click', b.action);
+                footer.appendChild(btn);
+            });
+        }
+        document.getElementById('modal-overlay').style.display = 'flex';
     },
 
-    toast(msg, type = 'info') {
+    fecharModal() {
+        document.getElementById('modal-overlay').style.display = 'none';
+    },
+
+    setupBackup() {
+        const btnSidebar = document.getElementById('btn-backup-sidebar');
+        if (btnSidebar) btnSidebar.addEventListener('click', () => {
+            if (typeof BackupModule !== 'undefined') BackupModule.exportJSON();
+        });
+    },
+
+    showToast(msg, tipo) {
         const toast = document.createElement('div');
-        toast.className = `toast toast-${type}`;
+        toast.className = 'toast toast-' + (tipo || 'info');
         toast.textContent = msg;
         document.body.appendChild(toast);
         setTimeout(() => {
@@ -82,25 +115,4 @@ const App = {
     }
 };
 
-/* ============================================================
-   Modal Helper
-   ============================================================ */
-const Modal = {
-    open(title, bodyHTML, buttons = []) {
-        document.getElementById('modal-title').textContent = title;
-        document.getElementById('modal-body').innerHTML = bodyHTML;
-        const footer = document.getElementById('modal-footer');
-        footer.innerHTML = '';
-        buttons.forEach(b => {
-            const btn = document.createElement('button');
-            btn.className = `btn ${b.class}`;
-            btn.textContent = b.label;
-            btn.addEventListener('click', b.action);
-            footer.appendChild(btn);
-        });
-        document.getElementById('modal-overlay').style.display = 'flex';
-    },
-    close() {
-        document.getElementById('modal-overlay').style.display = 'none';
-    }
-};
+document.addEventListener('DOMContentLoaded', () => AppModule.init());
